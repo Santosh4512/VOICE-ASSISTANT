@@ -143,11 +143,22 @@ const gmailService = {
             host: 'imap.gmail.com', port: 993, secure: true,
             auth: { user: email, pass: creds }, logger: false
         });
+
+        // 🔄 Map query to IMAP Path
+        const query = options.query || options.q || "";
+        let path = "INBOX";
+        if (query.includes("is:starred")) path = "[Gmail]/Starred";
+        if (query.includes("in:sent")) path = "[Gmail]/Sent Mail";
+        if (query.includes("in:draft")) path = "[Gmail]/Drafts";
+        if (query.includes("in:trash")) path = "[Gmail]/Trash";
+
         await client.connect();
-        const mailbox = await client.mailboxOpen('INBOX');
+        const mailbox = await client.mailboxOpen(path);
         try {
             const emails = [];
-            const startSeq = Math.max(1, mailbox.exists - (options.limit || 10) + 1);
+            const count = Math.min(mailbox.exists, options.limit || 20);
+            const startSeq = Math.max(1, mailbox.exists - count + 1);
+
             for await (const msg of client.fetch(`${startSeq}:*`, { envelope: true, flags: true })) {
                 if (!msg || !msg.envelope) continue;
                 emails.push({
@@ -160,7 +171,7 @@ const gmailService = {
                     legacy: true
                 });
             }
-            return emails.reverse();
+            return emails.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
         } finally { await client.logout(); }
     },
 
@@ -182,11 +193,33 @@ const gmailService = {
             }
         }
 
-        // Final fallback: try to find this email via IMAP (simplified snippet)
-        console.warn(`[GMAIL][GET] No token, attempting IMAP fallback for ID: ${id}`);
-        // For simplicity, we can't easily fetch a single message by ID in IMAP without more complex logic, 
-        // so we'll just throw for now or look for it in the list.
-        throw new Error('GET_EMAIL_OAUTH_REQUIRED');
+        // 🔄 IMAP Fallback for reading a single email
+        const db = await getDb();
+        const userDoc = await db.collection('users').doc(uid).get();
+        const creds = userDoc.data()?.security?.gmailAppPassword;
+        const email = userDoc.data()?.email;
+        if (!creds || !email) throw new Error('NO_FALLBACK_CREDENTIALS');
+
+        const client = new ImapFlow({
+            host: 'imap.gmail.com', port: 993, secure: true,
+            auth: { user: email, pass: creds }, logger: false
+        });
+        await client.connect();
+        try {
+            await client.mailboxOpen('INBOX');
+            // In IMAP fallback, 'id' is the UID string
+            const msg = await client.fetchOne(id, { envelope: true, source: true });
+            if (!msg || !msg.envelope || !msg.source) throw new Error('EMAIL_NOT_FOUND');
+            return {
+                id,
+                from: msg.envelope.from?.[0]?.address || 'Unknown',
+                to: msg.envelope.to?.[0]?.address || 'Unknown',
+                subject: msg.envelope.subject || '(No Subject)',
+                date: msg.envelope.date ? msg.envelope.date.toISOString() : new Date().toISOString(),
+                body: msg.source.toString().substring(0, 2000), // Raw source snippet for LLM to parse
+                legacy: true
+            };
+        } finally { await client.logout(); }
     },
 
     async markAsRead(uid: string, token: string, id: string) {

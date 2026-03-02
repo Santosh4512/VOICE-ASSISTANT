@@ -172,7 +172,14 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
       // 🔄 STEP 1: Attempt OAuth Fetch
       token = await getValidAccessToken();
 
-      const query = currentSection === "starred" ? "is:starred" : currentSection === "sent" ? "in:sent" : "in:inbox";
+      const queryMap: Record<string, string> = {
+        inbox: "in:inbox",
+        starred: "is:starred",
+        sent: "in:sent",
+        drafts: "in:draft",
+        trash: "in:trash"
+      };
+      const query = queryMap[currentSection] || "in:inbox";
       const result = await apiClient.get<any>(`/api/v1/gmail?action=list&limit=30&query=${encodeURIComponent(query)}`, { googleToken: token });
 
       if (result.success) {
@@ -204,7 +211,14 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
       // 🔄 STEP 3: Fallback to App Password (IMAP)
       console.log("[GMAIL] OAuth explicitly failed twice. Attempting App Password fallback.");
       try {
-        const query = currentSection === "starred" ? "is:starred" : currentSection === "sent" ? "in:sent" : "in:inbox";
+        const queryMap: Record<string, string> = {
+          inbox: "in:inbox",
+          starred: "is:starred",
+          sent: "in:sent",
+          drafts: "in:draft",
+          trash: "in:trash"
+        };
+        const query = queryMap[currentSection] || "in:inbox";
         const fallbackResult = await apiClient.get<any>(`/api/v1/gmail?action=list&limit=30&query=${encodeURIComponent(query)}`);
 
         if (fallbackResult.success && fallbackResult.data?.messages?.length > 0) {
