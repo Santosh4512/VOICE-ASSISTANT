@@ -56,6 +56,7 @@ const Gmail = () => {
     generateReply,
     sendReply,
     sendNewEmail,
+    startOAuth,
 
     // ✉️ COMPOSE
     isComposeOpen,
@@ -115,26 +116,10 @@ const Gmail = () => {
   /* ======================================================
      🔐 HANDLE AUTH ERROR (APP PASSWORD FALLBACK FLOW)
      ====================================================== */
-  const startGmailOAuth = () => {
-    const url = "https://accounts.google.com/o/oauth2/v2/auth" +
-      `?client_id=${import.meta.env.VITE_GOOGLE_CLIENT_ID}` +
-      `&redirect_uri=${encodeURIComponent(window.location.origin + "/gmail-oauth")}` +
-      `&response_type=token` +
-      `&scope=${encodeURIComponent("https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send")}` +
-      `&prompt=consent`;
-
-    window.location.href = url;
-  };
-
   useEffect(() => {
     if (error === "AUTH_ERROR") {
-      speak("I am not able to fetch your mails through your google app password. We will have to do OAuth to fetch your mails.");
-
-      // Wait for speech then redirect
-      const timer = setTimeout(() => {
-        startGmailOAuth();
-      }, 6000);
-      return () => clearTimeout(timer);
+      speak("I am not able to fetch your mails. Redirecting to Google for authentication.");
+      setTimeout(() => startOAuth(), 3000);
     }
   }, [error]);
 
@@ -219,10 +204,7 @@ const Gmail = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  speak("Redirecting to Google for Gmail authentication.");
-                  startGmailOAuth();
-                }}
+                onClick={startOAuth}
               >
                 Connect Gmail
               </Button>

@@ -60,7 +60,21 @@ function loadGapiScript(): Promise<void> {
 export async function getValidAccessToken(): Promise<string> {
   // 1. Try LocalStorage (Fastest & Direct from UI flow)
   const localToken = localStorage.getItem("gmail_oauth_token");
-  if (localToken) {
+  const localExpiresAt = localStorage.getItem("gmail_oauth_expires_at");
+  const now = Date.now();
+
+  if (localToken && localExpiresAt) {
+    const expiresAt = parseInt(localExpiresAt);
+    if (expiresAt > now + 300000) { // 5 min buffer
+      return localToken;
+    }
+    console.warn("[GMAIL] Local token expired. Checking Firestore.");
+    localStorage.removeItem("gmail_oauth_token");
+    localStorage.removeItem("gmail_oauth_expires_at");
+  } else if (localToken) {
+    // If no expiry info, we can't trust it long-term. 
+    // Return for now to maintain some backward compatibility but warn.
+    console.warn("[GMAIL] Local token found without expiry metadata.");
     return localToken;
   }
   if (!auth.currentUser) {
@@ -78,7 +92,6 @@ export async function getValidAccessToken(): Promise<string> {
 
   const data = snap.data();
   // Relaxed expiry check (give 5 min buffer)
-  const now = Date.now();
   if (data.accessToken && (!data.expiresAt || data.expiresAt > now + 300000)) {
     return data.accessToken;
   }

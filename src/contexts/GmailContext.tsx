@@ -95,7 +95,8 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
     const redirectUri = `${window.location.origin}/gmail-oauth`;
     const scope =
       "https://www.googleapis.com/auth/gmail.readonly " +
-      "https://www.googleapis.com/auth/gmail.send";
+      "https://www.googleapis.com/auth/gmail.send " +
+      "https://www.googleapis.com/auth/gmail.modify";
 
     const url =
       "https://accounts.google.com/o/oauth2/v2/auth" +
@@ -115,15 +116,19 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
 
     const params = new URLSearchParams(hash.substring(1));
     const token = params.get("access_token");
+    const expiresIn = params.get("expires_in");
+
     if (!token) return;
 
+    const expiresAt = Date.now() + (expiresIn ? parseInt(expiresIn) : 3600) * 1000;
+
     localStorage.setItem("gmail_oauth_token", token);
+    localStorage.setItem("gmail_oauth_expires_at", expiresAt.toString());
     setOauthConnected(true);
 
     try {
       const user = auth.currentUser;
       if (user) {
-        const expiresAt = Date.now() + 100 * 24 * 60 * 60 * 1000;
         await setDoc(doc(db, "gmail_tokens", user.uid), {
           accessToken: token,
           expiresAt,
@@ -131,7 +136,7 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
           updatedAt: serverTimestamp(),
           email: user.email
         }, { merge: true });
-        console.log("[GMAIL] OAuth token synced to Firestore");
+        console.log("[GMAIL] OAuth token synced to Firestore with expiry:", new Date(expiresAt).toLocaleString());
       }
     } catch (err) {
       console.error("[GMAIL] Failed to sync token to Firestore", err);
