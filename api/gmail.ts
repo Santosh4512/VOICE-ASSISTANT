@@ -289,6 +289,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 const bodySend = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
                 const s = await gmailService.sendEmail(uid, token, bodySend);
                 return res.status(200).json({ success: true, data: s });
+            case 'status':
+                if (token) {
+                    const statusRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX`, { headers: gmailService.getHeaders(token) });
+                    const statusData = await statusRes.json();
+                    return res.status(200).json({ success: true, data: { unreadCount: statusData.messagesUnread || 0 } });
+                }
+                // Fallback unread count via IMAP
+                try {
+                    const db = await getDb();
+                    const userDoc = await db.collection('users').doc(uid).get();
+                    const creds = userDoc.data()?.security?.gmailAppPassword;
+                    const email = userDoc.data()?.email;
+                    if (creds && email) {
+                        const client = new ImapFlow({
+                            host: 'imap.gmail.com', port: 993, secure: true,
+                            auth: { user: email, pass: creds }, logger: false
+                        });
+                        await client.connect();
+                        const status = await client.status('INBOX', { unseen: true });
+                        await client.logout();
+                        return res.status(200).json({ success: true, data: { unreadCount: status.unseen || 0 } });
+                    }
+                } catch (e) {
+                    console.error("Status fallback failed:", e);
+                }
+                return res.status(200).json({ success: true, data: { unreadCount: 0 } });
             default:
                 return res.status(400).json({ success: false, error: 'INVALID_ACTION' });
         }

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGovind } from '@/contexts/GovindContext';
+import { useGmail } from '@/contexts/GmailContext';
+import { useTelegram } from '@/contexts/TelegramContext';
 import {
   Home,
   LayoutDashboard,
@@ -46,10 +48,18 @@ export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { isAuthenticated } = useGovind();
+  const { unreadCount: gmailUnread } = useGmail();
+  const { unreadChats } = useTelegram();
+
+  const telegramUnread = unreadChats.reduce((acc, chat) => acc + (chat.unreadCount || 0), 0);
 
   const NavLink = ({ item }: { item: NavItem }) => {
     const isActive = location.pathname === item.href;
     const Icon = item.icon;
+
+    let dynamicBadge = item.badge;
+    if (item.label === 'Gmail' && gmailUnread > 0) dynamicBadge = gmailUnread.toString();
+    if (item.label === 'Telegram' && telegramUnread > 0) dynamicBadge = telegramUnread.toString();
 
     const linkContent = (
       <Link
@@ -68,9 +78,9 @@ export const Sidebar = () => {
         {!collapsed && (
           <>
             <span className="flex-1 text-sm font-medium">{item.label}</span>
-            {item.badge && (
-              <span className="px-2 py-0.5 text-xs font-medium bg-primary/20 text-primary rounded-full">
-                {item.badge}
+            {dynamicBadge && (
+              <span className="px-2 py-0.5 text-xs font-semibold bg-primary/20 text-primary rounded-full min-w-[1.25rem] text-center">
+                {dynamicBadge}
               </span>
             )}
           </>

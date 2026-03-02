@@ -1,7 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useGovind } from '@/contexts/GovindContext';
-import { Mic, MicOff, User, LogOut, Settings, Bell } from 'lucide-react';
+import { useGmail } from '@/contexts/GmailContext';
+import { useTelegram } from '@/contexts/TelegramContext';
+import { Mic, MicOff, User, LogOut, Settings, Bell, Mail, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +15,12 @@ import {
 
 export const Navbar = () => {
   const { state, isAuthenticated, userName, wakeUp, sleep, setIsAuthenticated, clearMessages, addMessage, speak, performLogout } = useGovind();
+  const { unreadCount: gmailUnread } = useGmail();
+  const { unreadChats } = useTelegram();
   const navigate = useNavigate();
+
+  const telegramUnread = unreadChats.reduce((acc, chat) => acc + (chat.unreadCount || 0), 0);
+  const totalUnread = gmailUnread + telegramUnread;
 
   const handleMicToggle = () => {
     if (state === 'DORMANT') {
@@ -79,9 +87,48 @@ export const Navbar = () => {
           </Button>
 
           {/* Notifications */}
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-            <Bell className="w-5 h-5" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground relative">
+                <Bell className="w-5 h-5" />
+                {totalUnread > 0 && (
+                  <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-background">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <p className="px-3 py-2 text-sm font-semibold border-b border-border/50">Notifications</p>
+
+              {gmailUnread > 0 && (
+                <DropdownMenuItem onClick={() => navigate('/gmail')} className="flex justify-between items-center py-3 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-primary" />
+                    <span>Gmail Emails</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-primary/20 text-primary">{gmailUnread}</Badge>
+                </DropdownMenuItem>
+              )}
+
+              {telegramUnread > 0 && (
+                <DropdownMenuItem onClick={() => navigate('/telegram')} className="flex justify-between items-center py-3 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <Send className="w-4 h-4 text-primary" />
+                    <span>Telegram Messages</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-primary/20 text-primary">{telegramUnread}</Badge>
+                </DropdownMenuItem>
+              )}
+
+              {totalUnread === 0 && (
+                <div className="p-6 text-center text-sm text-muted-foreground">
+                  <Bell className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                  <p>Everything is up to date!</p>
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* User Menu */}
           {isAuthenticated ? (

@@ -54,6 +54,8 @@ interface GmailContextType {
 
   currentSection: string;
   changeSection: (section: string) => Promise<void>;
+  unreadCount: number;
+  fetchUnreadCount: () => Promise<void>;
 }
 
 const GmailContext = createContext<GmailContextType | undefined>(undefined);
@@ -69,7 +71,27 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
   const [oauthConnected, setOauthConnected] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [composeData, setComposeData] = useState<{ to: string, subject: string, body: string, privacyInfo?: string[] }>({ to: '', subject: '', body: '', privacyInfo: [] });
+  const [unreadCount, setUnreadCount] = useState(0);
   const [currentSection, setCurrentSection] = useState("inbox");
+
+  const fetchUnreadCount = async () => {
+    try {
+      let token = "";
+      try { token = await getValidAccessToken(); } catch (e) { }
+      const res = await apiClient.get<any>(`/api/v1/gmail?action=status`, token ? { googleToken: token } : {});
+      if (res.success) {
+        setUnreadCount(res.data?.unreadCount || 0);
+      }
+    } catch (e) {
+      console.warn("[GMAIL] Failed to fetch unread count:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 60000); // Poll every minute
+    return () => clearInterval(interval);
+  }, []);
 
   const closeEmail = () => setSelectedEmail(null);
 
@@ -464,7 +486,9 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
         composeData,
         setComposeData,
         currentSection,
-        changeSection
+        changeSection,
+        unreadCount,
+        fetchUnreadCount
       }}
     >
       {children}
