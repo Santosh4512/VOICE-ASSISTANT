@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useGovind } from '@/contexts/GovindContext';
-import { 
-  Home, 
-  LayoutDashboard, 
-  Mail, 
-  MessageSquare, 
-  Send, 
+import {
+  Home,
+  LayoutDashboard,
+  Mail,
+  MessageSquare,
+  Send,
   Phone,
-  Settings, 
-  FileText, 
+  Settings,
+  FileText,
   ChevronLeft,
   ChevronRight,
   Sparkles
@@ -31,7 +31,7 @@ const mainNavItems: NavItem[] = [
 ];
 
 const platformItems: NavItem[] = [
-  { icon: Mail, label: 'Gmail', href: '/gmail', badge: '3' },
+  { icon: Mail, label: 'Gmail', href: '/gmail' },
   { icon: MessageSquare, label: 'Outlook', href: '/outlook' },
   { icon: Send, label: 'Telegram', href: '/telegram' },
   { icon: Phone, label: 'WhatsApp', href: '/whatsapp' },
@@ -56,8 +56,8 @@ export const Sidebar = () => {
         to={item.href}
         className={cn(
           "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
-          isActive 
-            ? "bg-primary/10 text-primary" 
+          isActive
+            ? "bg-primary/10 text-primary"
             : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
         )}
       >
@@ -95,7 +95,7 @@ export const Sidebar = () => {
   };
 
   return (
-    <aside 
+    <aside
       className={cn(
         "fixed left-0 top-16 bottom-0 glass border-r border-border/50 transition-all duration-300 z-40",
         collapsed ? "w-16" : "w-64"
