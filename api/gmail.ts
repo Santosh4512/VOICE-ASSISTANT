@@ -45,7 +45,7 @@ const tokenService = {
         const data = doc.data() as any;
         const now = Math.floor(Date.now() / 1000);
         if (data.accessToken && (!data.expiresAt || data.expiresAt > now + 300)) return data.accessToken;
-        
+
         if (!data.refreshToken) throw new Error('REFRESH_TOKEN_MISSING');
         return this.refresh(uid, data.refreshToken);
     },
@@ -82,20 +82,23 @@ const tokenService = {
 /* --- 3. LOCAL GMAIL SERVICE --- */
 const gmailService = {
     getHeaders(token: string) { return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }; },
-    
+
     async listEmails(uid: string, token: string, options: any) {
-        try {
-            const { limit = 20, unread = false, q } = options;
+        // 1. If token is provided, we MUST use it (No fallback here, let frontend retry)
+        if (token) {
+            const { limit = 20, unread = false, q } = options || {};
             let query = unread ? 'is:unread ' : '';
             if (q) query += q;
             const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}${query ? `&q=${encodeURIComponent(query)}` : '&labelIds=INBOX'}`;
-            
+
             const res = await fetch(url, { headers: this.getHeaders(token) });
-            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            if (!res.ok) throw new Error(`OAUTH_FAILED_${res.status}`);
+
             const data = await res.json();
             const messages = data.messages || [];
-            
+
             return await Promise.all(messages.slice(0, 15).map(async (msg: any) => {
+                if (!msg?.id) return null;
                 try {
                     const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata`, { headers: this.getHeaders(token) });
                     const detail = await detailRes.json();
@@ -112,10 +115,11 @@ const gmailService = {
                     };
                 } catch { return null; }
             })).then(list => list.filter(Boolean));
-        } catch (err: any) {
-            console.warn(`[GMAIL] OAuth list failed: ${err.message}. Trying IMAP fallback...`);
-            return this.listEmailsViaImap(uid, options);
         }
+
+        // 2. No token provided (or retry failed) -> Try IMAP Fallback
+        console.warn(`[GMAIL] No OAuth token provided for UID ${uid}. Using IMAP fallback.`);
+        return this.listEmailsViaImap(uid, options);
     },
 
     async listEmailsViaImap(uid: string, options: any) {
@@ -151,30 +155,46 @@ const gmailService = {
     },
 
     async getEmail(uid: string, token: string, id: string) {
-        try {
-            const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: this.getHeaders(token) });
-            const data = await res.json();
-            const headers = data.payload?.headers || [];
-            const getH = (n: string) => headers.find((h: any) => h.name === n)?.value || '';
-            return {
-                id, threadId: data.threadId, from: getH('From'), to: getH('To'),
-                subject: getH('Subject'), date: getH('Date'), body: data.snippet || ''
-            };
-        } catch { throw new Error('GET_FAILED'); }
+        if (token) {
+            try {
+                const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: this.getHeaders(token) });
+                if (!res.ok) throw new Error(`OAUTH_GET_FAILED_${res.status}`);
+                const data = await res.json();
+                const headers = data.payload?.headers || [];
+                const getH = (n: string) => headers.find((h: any) => h.name === n)?.value || '';
+                return {
+                    id, threadId: data.threadId, from: getH('From'), to: getH('To'),
+                    subject: getH('Subject'), date: getH('Date'), body: data.snippet || ''
+                };
+            } catch (err: any) {
+                console.error(`[GMAIL][GET] OAuth failed: ${err.message}`);
+                throw err;
+            }
+        }
+
+        // Final fallback: try to find this email via IMAP (simplified snippet)
+        console.warn(`[GMAIL][GET] No token, attempting IMAP fallback for ID: ${id}`);
+        // For simplicity, we can't easily fetch a single message by ID in IMAP without more complex logic, 
+        // so we'll just throw for now or look for it in the list.
+        throw new Error('GET_EMAIL_OAUTH_REQUIRED');
     },
 
     async markAsRead(uid: string, token: string, id: string) {
-        await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {
+        if (!token) throw new Error('TOKEN_REQUIRED_FOR_MODIFY');
+        const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {
             method: 'POST', headers: this.getHeaders(token), body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
         });
+        if (!res.ok) throw new Error(`MARK_READ_FAILED_${res.status}`);
         return { success: true };
     },
 
     async sendEmail(uid: string, token: string, { to, subject, body }: any) {
+        if (!token) throw new Error('TOKEN_REQUIRED_FOR_SEND');
         const raw = Buffer.from(`To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
             method: 'POST', headers: this.getHeaders(token), body: JSON.stringify({ raw })
         });
+        if (!res.ok) throw new Error(`SEND_FAILED_${res.status}`);
         return await res.json();
     }
 };
@@ -186,7 +206,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try { requestId = crypto.randomUUID(); } catch { requestId = Math.random().toString(36).substring(7); }
 
     const { action } = req.query;
-    console.log(`📨 [GMAIL API][${requestId}] Action: ${action}`);
+    const clientToken = req.headers['google-token'] || req.headers['googletoken'];
+
+    console.log(`📨 [GMAIL API][${requestId}] Action: ${action} | Client Token: ${!!clientToken}`);
 
     try {
         // Auth check
@@ -197,8 +219,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const decoded = await auth.verifyIdToken(idToken);
         const uid = decoded.uid;
 
-        let token = "";
-        try { token = await tokenService.getValidToken(uid); } catch (e: any) { console.warn(`[GMAIL][${requestId}] OAuth failed: ${e.message}`); }
+        // Token resolution
+        let token = (Array.isArray(clientToken) ? clientToken[0] : clientToken) || "";
+
+        if (!token) {
+            try {
+                token = await tokenService.getValidToken(uid);
+                console.log(`🔑 [GMAIL][${requestId}] Resolved token from Firestore.`);
+            } catch (e: any) {
+                console.warn(`[GMAIL][${requestId}] Firestore token failed: ${e.message}`);
+            }
+        }
 
         switch (action) {
             case 'list':
@@ -220,6 +251,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
     } catch (error: any) {
         console.error(`🛑 [GMAIL CRASH][${requestId}]:`, error.message);
-        return res.status(500).json({ success: false, error: error.message, requestId, latency: Date.now() - start });
+        return res.status(error.status || 500).json({
+            success: false,
+            error: error.message,
+            requestId,
+            latency: Date.now() - start
+        });
     }
 }

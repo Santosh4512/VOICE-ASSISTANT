@@ -137,9 +137,10 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
           email: user.email
         }, { merge: true });
         console.log("[GMAIL] OAuth token synced to Firestore with expiry:", new Date(expiresAt).toLocaleString());
+        sessionStorage.removeItem("gmail_oauth_retry_count");
       }
-    } catch (err) {
-      console.error("[GMAIL] Failed to sync token to Firestore", err);
+    } catch (e) {
+      console.error("[GMAIL] Failed to sync token to Firestore", e);
     }
 
     setGmailConnected(true);
@@ -164,12 +165,12 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
   const fetchInboxViaOAuth = async () => {
     setInboxEmails([]);
     setLoading(true);
+    setError(null);
     let token = "";
 
     try {
-      // Step 1: Attempt OAuth Fetch
+      // 🔄 STEP 1: Attempt OAuth Fetch
       token = await getValidAccessToken();
-      localStorage.setItem("gmail_oauth_token", token);
 
       const query = currentSection === "starred" ? "is:starred" : currentSection === "sent" ? "in:sent" : "in:inbox";
       const result = await apiClient.get<any>(`/api/v1/gmail?action=list&limit=30&query=${encodeURIComponent(query)}`, { googleToken: token });
@@ -181,57 +182,61 @@ export const GmailProvider = ({ children }: { children: ReactNode }) => {
           date: new Date(email.date)
         })));
         setLoading(false);
-        sessionStorage.removeItem("gmail_oauth_redirected");
+        sessionStorage.removeItem("gmail_oauth_retry_count");
         return;
       }
+
       throw new Error(result.error?.message || "OAUTH_FETCH_FAILED");
 
     } catch (e: any) {
-      console.warn("[GMAIL] OAuth fetching failed. Checking redirect status...", e);
+      console.warn("[GMAIL] Primary OAuth Fetch failed:", e);
 
-      const alreadyRedirected = sessionStorage.getItem("gmail_oauth_redirected");
+      // 🔄 STEP 2: Trigger OAuth Flow Again (Once per session failure)
+      const retryCount = parseInt(sessionStorage.getItem("gmail_oauth_retry_count") || "0");
 
-      if (!alreadyRedirected) {
-        console.log("[GMAIL] First failure, triggering OAuth redirect...");
-        sessionStorage.setItem("gmail_oauth_redirected", "true");
-        startOAuth();
+      if (retryCount < 1) {
+        sessionStorage.setItem("gmail_oauth_retry_count", "1");
+        speakText("I'm having trouble with your connection. Let me try re-authenticating your Gmail account.");
+        setTimeout(() => startOAuth(), 2000);
         return;
       }
 
-      // Step 3: OAuth still failing. Attempt App Password fallback.
-      console.log("[GMAIL] OAuth still failing. Attempting App Password fallback...");
-      const query = currentSection === "starred" ? "is:starred" : currentSection === "sent" ? "in:sent" : "in:inbox";
-      const fallbackResult = await apiClient.get<any>(`/api/v1/gmail?action=list&limit=30&query=${encodeURIComponent(query)}`);
+      // 🔄 STEP 3: Fallback to App Password (IMAP)
+      console.log("[GMAIL] OAuth explicitly failed twice. Attempting App Password fallback.");
+      try {
+        const query = currentSection === "starred" ? "is:starred" : currentSection === "sent" ? "in:sent" : "in:inbox";
+        const fallbackResult = await apiClient.get<any>(`/api/v1/gmail?action=list&limit=30&query=${encodeURIComponent(query)}`);
 
-      if (fallbackResult.success) {
-        const messages = fallbackResult.data?.messages || [];
-        setInboxEmails(messages.map((email: any) => ({
-          ...email,
-          date: new Date(email.date)
-        })));
-        setLoading(false);
-        sessionStorage.removeItem("gmail_oauth_redirected");
-        speakText("I'm using your Google App Password to fetch emails since OAuth is unavailable.");
-        return;
+        if (fallbackResult.success && fallbackResult.data?.messages?.length > 0) {
+          const messages = fallbackResult.data.messages;
+          setInboxEmails(messages.map((email: any) => ({
+            ...email,
+            date: new Date(email.date)
+          })));
+          setLoading(false);
+          sessionStorage.removeItem("gmail_oauth_retry_count");
+          speakText("I'm using your App Password to fetch emails since the main connection is unavailable.");
+          return;
+        }
+      } catch (fallbackErr) {
+        console.error("[GMAIL] App Password fallback also failed:", fallbackErr);
       }
 
-      // Step 4: Full Failure.
-      console.error("[GMAIL] Fatal authentication failure. Redirecting to Profile.");
-      setError("GMAIL_AUTH_CRITICAL");
+      // 🔄 STEP 4: Absolute Failure - Ask user to check settings
       setLoading(false);
+      setError("GMAIL_CONNECTION_LOST");
 
       const user = auth.currentUser;
       if (user) {
         const profile = await getUserProfile(user.uid);
         if (!profile?.security?.gmailAppPassword) {
-          speakText("I'm having trouble connecting to your Gmail. Please add a Google App Password in your settings.");
+          speakText("I can't connect through Google or find a backup App Password. Please add an App Password in your settings.");
         } else {
-          speakText("Your Google App Password seems incorrect. Please update it in your profile settings.");
+          speakText("Your connection is failing even with an App Password. Please re-check your Gmail credentials in Settings.");
         }
       }
 
-      navigate("/settings");
-      return;
+      setTimeout(() => navigate("/settings"), 4000);
     }
   };
 
