@@ -98,7 +98,7 @@ graph TD
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/jenaarmaan/Team-D-Infosys-Springboard-Internship-6.0-Batch--11.git
+   git clone https://github.com/Santosh4512/VOICE-ASSISTANT.git
    cd voice-mail
    ```
 
