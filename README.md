@@ -134,30 +134,6 @@ Our Gemini adapter includes a built-in security middleware. Before a prompt is s
 
 ---
 
-## 📅 Roadmap & Milestones
-
-### ✅ Milestone 1: Setup & Authentication
-**Deliverable:** Functional login + speech-to-text prototype
-- **User Registration/Login**: OAuth2 (Google/Microsoft) via Firebase.
-- **Biometric Security**: Face recognition using TensorFlow.js & MediaPipe.
-- **Voice PIN**: Secure 2FA for sensitive operations.
-- **Profile Management**: Voice-guided setup for language and preferences.
-
-### ✅ Milestone 2: Core Speech & Email Integration
-**Deliverable:** Voice-controlled Gmail assistant (MVP)
-- **Speech Pipeline**: Continuous recognition (Web Speech API) + custom TTS.
-- **Gmail Integration**: Full email lifecycle (Read, Send, Reply, Delete).
-- **Voice State Machine**: Advanced wake-word and interruption handling.
-- **Intent Engine**: NLU-based command classification.
-
-### ✅ Milestone 3: Messaging, Summarization & AI Replies
-**Deliverable:** Multi-platform assistant with smart AI capabilities
-- **Multi-Platform Messaging**: Telegram (Custom Bot API).
-- **Smart Summarization**: Gemini-powered email/message condensing.
-- **AI Reply Suggestions**: Context-aware drafting and composition.
-- **Multi-Language Support**: Seamless switching between voice recognition languages.
-
----
 
 ## 🎯 Feature Matrix
 
@@ -211,11 +187,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-## 📧 Contact
-
-
-
-<div align="center">
 
 
 
