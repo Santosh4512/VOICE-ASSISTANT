@@ -213,11 +213,11 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## 📧 Contact
 
-**Team D - Infosys Springboard Internship 6.0 (Batch 11)**
+
 
 <div align="center">
 
-Made with ❤️ by Team D
+
 
 [Back to top](#-govind-ai-voice-first-communication-assistant)
 
